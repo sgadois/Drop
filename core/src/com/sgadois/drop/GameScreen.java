@@ -1,7 +1,5 @@
 package com.sgadois.drop;
 
-import java.util.Iterator;
-
 import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.Screen;
 import com.badlogic.gdx.audio.Music;
@@ -13,6 +11,7 @@ import com.badlogic.gdx.math.MathUtils;
 import com.badlogic.gdx.math.Rectangle;
 import com.badlogic.gdx.math.Vector3;
 import com.badlogic.gdx.utils.Array;
+import com.badlogic.gdx.utils.Pool;
 import com.badlogic.gdx.utils.TimeUtils;
 
 public class GameScreen implements Screen {
@@ -26,8 +25,20 @@ public class GameScreen implements Screen {
 	OrthographicCamera camera;
 	Rectangle bucket;
 	Vector3 touchPos;
-	Array<Rectangle> raindrops;
 	long lastDropTime;
+	
+	
+	private final Array<Droplet> activeDroplets = new Array<Droplet>();
+	
+	private final Pool<Droplet> dropletPool = new Pool<Droplet>() {
+
+		@Override
+		protected Droplet newObject() {
+			return new Droplet();
+		}
+		
+	};
+	
 	
 	public GameScreen(final Drop gam) {
 		
@@ -49,7 +60,6 @@ public class GameScreen implements Screen {
 		camera.setToOrtho(false, 480, 320);
 		
 		
-		raindrops = new Array<Rectangle>();
 		
 		/*
 		 * Creating
@@ -76,8 +86,8 @@ public class GameScreen implements Screen {
 		game.batch.setProjectionMatrix(camera.combined);
 		game.batch.begin();
 		game.batch.draw(bucketImage, bucket.x, bucket.y);
-		for(Rectangle raindrop: raindrops)
-			game.batch.draw(dropImage, raindrop.x, raindrop.y);
+		for(Droplet droplet : activeDroplets)
+			game.batch.draw(dropImage, droplet.position.x, droplet.position.y);
 		game.batch.end();
 		
 		/*
@@ -94,32 +104,29 @@ public class GameScreen implements Screen {
 		/*
 		 * Raindrops
 		 */
-		if(TimeUtils.nanoTime() - this.lastDropTime > 1000000000) 
+		if(TimeUtils.nanoTime() - this.lastDropTime > 1000000000)
 			this.spawnRainDrop();
 		
-		Iterator<Rectangle> iter = raindrops.iterator();
-		while(iter.hasNext()){
-			Rectangle raindrop = iter.next();
-			raindrop.y -= 200 * Gdx.graphics.getDeltaTime();
-			if(raindrop.y + 32 < 0) 
-				iter.remove();
-			if(raindrop.overlaps(bucket)) {
-				dropSound.play();
-				iter.remove();
-			}
-				
-		}
+		Droplet item;
+        int len = activeDroplets.size;
+        for (int i = len; --i >= 0;) {
+            item = activeDroplets.get(i);
+            boolean catchDrop = item.render(delta, bucket);
+            if(catchDrop)
+            	this.dropSound.play();
+            if (item.alive == false) {
+            	activeDroplets.removeIndex(i);
+                dropletPool.free(item);
+            }
+        }
 		
 
 	}
 	
 	private void spawnRainDrop() {
-		Rectangle raindrop = new Rectangle();
-		raindrop.x = MathUtils.random(0, 480-32);
-		raindrop.y = 320;
-		raindrop.width = 32;
-		raindrop.height = 32;
-		raindrops.add(raindrop);
+		Droplet item = dropletPool.obtain();
+		item.init(MathUtils.random(0, 480-32), 320);
+		activeDroplets.add(item);
 		lastDropTime = TimeUtils.nanoTime();
 	}
 	
